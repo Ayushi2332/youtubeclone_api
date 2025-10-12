@@ -141,7 +141,7 @@ Router.delete('/:commentId', checkAuth, async (req, res) => {
     }
 
     await Comment.deleteOne({ _id: req.params.commentId });
-    console.log(' Comment deleted successfully');
+    console.log('Comment deleted successfully');
 
     res.status(200).json({
       message: 'Comment deleted successfully!'
