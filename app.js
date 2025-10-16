@@ -22,7 +22,8 @@ const connectWithDatabase = async () => {
 };
 connectWithDatabase();
 
-app.use(cors)
+app.use(cors());
+
 
 /* -----------------------------------------
    ✅ MIDDLEWARE
