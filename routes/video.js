@@ -6,10 +6,25 @@ const Video = require('../models/Video');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
 
+// ---------------- CLOUDINARY CONFIG ----------------
 cloudinary.config({
     cloud_name: process.env.CLOUD_NAME,
     api_key: process.env.API_KEY,
     api_secret: process.env.CLOUD_SECRET,
+});
+
+// ---------------- GET OWN VIDEOS ----------------
+Router.get('/own-video', checkAuth, async (req, res) => {
+    try {
+        const token = req.headers.authorization.split(" ")[1];
+        const verifiedUser = jwt.verify(token, process.env.JWT_SECRET || 'shivaayuu diaries 123');
+        
+        const videos = await Video.find({ user_id: verifiedUser._id }).populate('user_id', 'channelName email logoUrl');
+        res.status(200).json(videos);
+    } catch (err) {
+        console.error("Own Video Error:", err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ---------------- UPLOAD VIDEO ----------------
@@ -57,6 +72,7 @@ Router.post('/upload', checkAuth, async (req, res) => {
         });
 
         const savedVideo = await newVideo.save();
+        console.log("Saved Video:", savedVideo);
         res.status(200).json({ message: "Upload successful", savedVideo });
 
     } catch (err) {
@@ -69,7 +85,7 @@ Router.post('/upload', checkAuth, async (req, res) => {
 Router.put('/:videoId', checkAuth, async (req, res) => {
     try {
         const token = req.headers.authorization.split(" ")[1];
-        const verifiedUser = jwt.verify(token, 'shivaayuu diaries 123');
+        const verifiedUser = jwt.verify(token, process.env.JWT_SECRET || 'shivaayuu diaries 123');
 
         const video = await Video.findById(req.params.videoId);
         if (!video) return res.status(404).json({ error: "Video not found" });
@@ -114,7 +130,7 @@ Router.put('/:videoId', checkAuth, async (req, res) => {
 Router.delete('/:videoId', checkAuth, async (req, res) => {
     try {
         const token = req.headers.authorization.split(" ")[1];
-        const verifiedUser = jwt.verify(token, 'shivaayuu diaries 123');
+        const verifiedUser = jwt.verify(token, process.env.JWT_SECRET || 'shivaayuu diaries 123');
 
         const video = await Video.findById(req.params.videoId);
         if (!video) return res.status(404).json({ error: "Video not found" });
@@ -139,7 +155,7 @@ Router.delete('/:videoId', checkAuth, async (req, res) => {
 Router.put('/like/:videoId', checkAuth, async (req, res) => {
     try {
         const token = req.headers.authorization.split(" ")[1];
-        const verifiedUser = jwt.verify(token, 'shivaayuu diaries 123');
+        const verifiedUser = jwt.verify(token, process.env.JWT_SECRET || 'shivaayuu diaries 123');
 
         const video = await Video.findById(req.params.videoId);
         if (!video) return res.status(404).json({ error: "Video not found" });
@@ -166,9 +182,7 @@ Router.put('/like/:videoId', checkAuth, async (req, res) => {
         res.status(200).json({
             message: "Video liked successfully",
             likes: video.likes,
-            likedBy: video.likedBy,
-            dislikes: video.dislikes,
-            dislikedBy: video.dislikedBy
+            dislikes: video.dislikes
         });
 
     } catch (err) {
@@ -181,7 +195,7 @@ Router.put('/like/:videoId', checkAuth, async (req, res) => {
 Router.put('/dislike/:videoId', checkAuth, async (req, res) => {
     try {
         const token = req.headers.authorization.split(" ")[1];
-        const verifiedUser = jwt.verify(token, 'shivaayuu diaries 123');
+        const verifiedUser = jwt.verify(token, process.env.JWT_SECRET || 'shivaayuu diaries 123');
 
         const video = await Video.findById(req.params.videoId);
         if (!video) return res.status(404).json({ error: "Video not found" });
@@ -208,9 +222,7 @@ Router.put('/dislike/:videoId', checkAuth, async (req, res) => {
         res.status(200).json({
             message: "Video disliked successfully",
             likes: video.likes,
-            likedBy: video.likedBy,
-            dislikes: video.dislikes,
-            dislikedBy: video.dislikedBy
+            dislikes: video.dislikes
         });
 
     } catch (err) {
@@ -229,7 +241,7 @@ Router.put('/views/:videoId', async (req, res) => {
         video.views += 1;
 
         await video.save();
-        res.status(200).json({ msg: 'good to go...' });
+        res.status(200).json({ msg: 'View count updated successfully' });
 
     } catch (err) {
         console.error("Views Error:", err);

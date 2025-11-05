@@ -57,7 +57,7 @@ Router.get('/:videoId', async (req, res) => {
 
     const comments = await Comment.find({ videoId: req.params.videoId })
       .sort({ createdAt: -1 })
-      .populate('user_id', 'channelName email logoUrl'); // if your User model has these fields
+      .populate('user_id', 'channelName email logoUrl'); 
 
     res.status(200).json({
       count: comments.length,
