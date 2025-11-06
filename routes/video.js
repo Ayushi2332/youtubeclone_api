@@ -19,7 +19,7 @@ Router.get('/own-video', checkAuth, async (req, res) => {
         const token = req.headers.authorization.split(" ")[1];
         const verifiedUser = jwt.verify(token, process.env.JWT_SECRET || 'shivaayuu diaries 123');
         
-        const videos = await Video.find({ user_id: verifiedUser._id }).populate('user_id', 'channelName email logoUrl');
+        const videos = await Video.find({ user_id: verifiedUser._id }).populate('user_id', 'channelName email logoUrl subscribers');
         res.status(200).json(videos);
     } catch (err) {
         console.error("Own Video Error:", err);
