@@ -1,3 +1,4 @@
+// routes/user.js
 const express = require('express');
 const Router = express.Router();
 const mongoose = require('mongoose');
@@ -7,41 +8,48 @@ const cloudinary = require('cloudinary').v2;
 require('dotenv').config();
 
 const User = require('../models/User');
-const checkAuth = require('../middleware/checkAuth');
-
 
 cloudinary.config({
   cloud_name: process.env.CLOUD_NAME,
-  api_key: process.env.CLOUD_API_KEY,
-  api_secret: process.env.CLOUD_API_SECRET,
+  api_key: process.env.CLOUD_API_KEY || process.env.API_KEY,
+  api_secret: process.env.CLOUD_API_SECRET || process.env.API_SECRET,
 });
 
-// ================= SIGNUP =================
+// ---------- SIGNUP ----------
 Router.post('/signup', async (req, res) => {
   try {
-    // check existing user
-    const existingUser = await User.findOne({ email: req.body.email });
-    if (existingUser) {
-      return res.status(400).json({ error: 'Email already registered' });
+    // validate required fields
+    const { channelName, email, phone, password } = req.body;
+    if (!channelName || !email || !phone || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
     }
 
-    // file check
+    // ensure logo file is present (using express-fileupload)
     if (!req.files || !req.files.logo) {
       return res.status(400).json({ error: 'Logo image is required' });
     }
 
-    // upload to cloudinary
-    const uploadedImage = await cloudinary.uploader.upload(req.files.logo.tempFilePath);
+    // check if email already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
 
-    // password hash
-    const hashedPassword = await bcrypt.hash(req.body.password, 10);
+    // upload logo to cloudinary
+    const uploadedImage = await cloudinary.uploader.upload(req.files.logo.tempFilePath, {
+      folder: 'youtube_clone_users',
+      resource_type: 'image',
+    });
 
-    // create new user
+    // hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // create user
     const newUser = new User({
       _id: new mongoose.Types.ObjectId(),
-      channelName: req.body.channelName,
-      email: req.body.email,
-      phone: req.body.phone,
+      channelName,
+      email: email.toLowerCase(),
+      phone,
       password: hashedPassword,
       logoUrl: uploadedImage.secure_url,
       logoId: uploadedImage.public_id,
@@ -50,41 +58,54 @@ Router.post('/signup', async (req, res) => {
       subscribedChannels: []
     });
 
-    const savedUser = await newUser.save();
-    res.status(200).json({ message: 'User created successfully', user: savedUser });
+    const saved = await newUser.save();
+
+    // create token (do NOT include password)
+    const token = jwt.sign({
+      _id: saved._id,
+      channelName: saved.channelName,
+      email: saved.email
+    }, process.env.JWT_SECRET || 'shivaayuu diaries 123', { expiresIn: '365d' });
+
+    // return user data + token
+    return res.status(201).json({
+      message: 'Signup successful',
+      token,
+      user: {
+        _id: saved._id,
+        channelName: saved.channelName,
+        email: saved.email,
+        phone: saved.phone,
+        logoUrl: saved.logoUrl,
+        subscribers: saved.subscribers
+      }
+    });
+
   } catch (err) {
     console.error('Signup Error:', err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message || 'Server error during signup' });
   }
 });
 
-// ================= LOGIN =================
+// ---------- LOGIN ----------
 Router.post('/login', async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.body.email });
-    if (!user) {
-      return res.status(400).json({ error: 'Email not registered' });
-    }
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
-    const isValid = await bcrypt.compare(req.body.password, user.password);
-    if (!isValid) {
-      return res.status(400).json({ error: 'Invalid password' });
-    }
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) return res.status(400).json({ error: 'Email is not registered' });
 
-    // token create
-    const token = jwt.sign(
-      {
-        _id: user._id,
-        channelName: user.channelName,
-        email: user.email,
-        phone: user.phone,
-        logoUrl: user.logoUrl,
-      },
-      process.env.JWT_SECRET || 'shivaayuu diaries 123',
-      { expiresIn: '365d' }
-    );
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) return res.status(400).json({ error: 'Invalid password' });
 
-    res.status(200).json({
+    const token = jwt.sign({
+      _id: user._id,
+      channelName: user.channelName,
+      email: user.email
+    }, process.env.JWT_SECRET || 'shivaayuu diaries 123', { expiresIn: '365d' });
+
+    return res.status(200).json({
       message: 'Login successful',
       token,
       user: {
@@ -93,70 +114,12 @@ Router.post('/login', async (req, res) => {
         email: user.email,
         phone: user.phone,
         logoUrl: user.logoUrl,
-        subscribers: user.subscribers,
-        subscribedChannels: user.subscribedChannels || [],
-      },
+        subscribers: user.subscribers
+      }
     });
   } catch (err) {
     console.error('Login Error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ================= SUBSCRIBE =================
-Router.put('/subscribe/:userBId', checkAuth, async (req, res) => {
-  try {
-    const token = req.headers.authorization.split(' ')[1];
-    const userA = jwt.verify(token, process.env.JWT_SECRET || 'shivaayuu diaries 123');
-    const userB = await User.findById(req.params.userBId);
-
-    if (!userB) return res.status(404).json({ error: 'User not found' });
-
-    // prevent duplicates
-    if (userB.subscribedBy.includes(userA._id)) {
-      return res.status(400).json({ error: 'Already subscribed' });
-    }
-
-    userB.subscribers += 1;
-    userB.subscribedBy.push(userA._id);
-    await userB.save();
-
-    const userAData = await User.findById(userA._id);
-    userAData.subscribedChannels.push(userB._id);
-    await userAData.save();
-
-    res.status(200).json({ message: 'Subscribed successfully' });
-  } catch (err) {
-    console.error('Subscribe Error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ================= UNSUBSCRIBE =================
-Router.put('/unsubscribe/:userBId', checkAuth, async (req, res) => {
-  try {
-    const token = req.headers.authorization.split(' ')[1];
-    const userA = jwt.verify(token, process.env.JWT_SECRET || 'shivaayuu diaries 123');
-    const userB = await User.findById(req.params.userBId);
-
-    if (!userB) return res.status(404).json({ error: 'User not found' });
-
-    if (!userB.subscribedBy.includes(userA._id)) {
-      return res.status(400).json({ error: 'You are not subscribed' });
-    }
-
-    userB.subscribers -= 1;
-    userB.subscribedBy = userB.subscribedBy.filter(id => id.toString() !== userA._id);
-    await userB.save();
-
-    const userAData = await User.findById(userA._id);
-    userAData.subscribedChannels = userAData.subscribedChannels.filter(id => id.toString() !== userB._id);
-    await userAData.save();
-
-    res.status(200).json({ message: 'Unsubscribed successfully' });
-  } catch (err) {
-    console.error('Unsubscribe Error:', err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message || 'Server error during login' });
   }
 });
 
